@@ -834,6 +834,7 @@ dependencies = [
  "bmi2",
  "critical-section",
  "embassy-executor",
+ "embassy-sync 0.8.0",
  "embassy-time",
  "esp-bootloader-esp-idf",
  "esp-hal",

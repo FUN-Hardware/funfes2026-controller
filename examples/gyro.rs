@@ -15,7 +15,7 @@ use bmi2::{
     types::{Burst, GyrRange, GyrRangeVal, OisRange, PwrCtrl},
 };
 use embassy_executor::Spawner;
-use embassy_time::{Duration, Timer, Ticker};
+use embassy_time::{Duration, Ticker, Timer};
 use esp_hal::{clock::CpuClock, delay::Delay, i2c::master::I2c, timer::timg::TimerGroup};
 use esp_println::println;
 
@@ -85,7 +85,7 @@ async fn main(spawner: Spawner) -> ! {
     let mut x_angle = 0.0;
     let mut y_angle = 0.0;
     let mut z_angle = 0.0;
-    
+
     let mut i = 0;
 
     let mut ticker = Ticker::every(Duration::from_millis((SAMPLE_RATE * 1000.0) as u64));
@@ -100,14 +100,9 @@ async fn main(spawner: Spawner) -> ! {
         x_angle += x_ave * SAMPLE_RATE;
         y_angle += y_ave * SAMPLE_RATE;
         z_angle += z_ave * SAMPLE_RATE;
-        
+
         if i % 10 == 0 {
-            println!(
-                "x: {:15}, y: {:15}, z: {:15}",
-                x_angle,
-                y_angle,
-                z_angle
-            );
+            println!("x: {:15}, y: {:15}, z: {:15}", x_angle, y_angle, z_angle);
             i = 1;
         }
     }

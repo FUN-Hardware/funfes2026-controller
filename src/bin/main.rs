@@ -8,13 +8,16 @@
 #![deny(clippy::large_stack_frames)]
 
 use embassy_executor::Spawner;
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal, watch::Watch};
 use embassy_time::{Duration, Timer};
-use esp_hal::clock::CpuClock;
-use esp_hal::timer::timg::TimerGroup;
+use esp_hal::{clock::CpuClock, i2c::master::I2c, timer::timg::TimerGroup};
 use esp_println::println;
 
+use funfes2026_controller::sensor;
+
 #[panic_handler]
-fn panic(_: &core::panic::PanicInfo) -> ! {
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    println!("Panic: {}", info);
     loop {}
 }
 
@@ -36,12 +39,27 @@ async fn main(spawner: Spawner) -> ! {
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0);
 
-    // TODO: Spawn some tasks
-    let _ = spawner;
+    static GYRO_WATCH: Watch<CriticalSectionRawMutex, (f32, f32), 2> = Watch::new();
+    static GYRO_RESET: Signal<CriticalSectionRawMutex, ()> = Signal::new();
+
+    let gyro = sensor::Gyro::new(
+        I2c::new(peripherals.I2C0, Default::default())
+            .unwrap()
+            .with_sda(peripherals.GPIO47)
+            .with_scl(peripherals.GPIO48),
+        GYRO_WATCH.sender(),
+    );
+
+    println!("OK");
+
+    spawner.spawn(sensor::sensor_task(gyro)).unwrap();
+
+    let mut receiver = GYRO_WATCH.receiver().unwrap();
 
     loop {
-        println!("OK2");
         Timer::after(Duration::from_secs(1)).await;
+        let gyro_data = receiver.get().await;
+        println!("gyro_data: {:?}", gyro_data);
     }
 
     // for inspiration have a look at the examples at https://github.com/esp-rs/esp-hal/tree/esp-hal-v1.0.0/examples

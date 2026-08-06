@@ -22,6 +22,7 @@ critical-section = "1.2.0"
 static_cell      = "2.1.1"
 esp-println = { version = "0.17.0", features = ["esp32s3"] }
 bmi2 = "0.1.2"
+embassy-sync = "0.8.0"
 
 
 [profile.dev]
