@@ -1,0 +1,53 @@
+# funfes2026-controller
+
+学園祭（未来祭2026）で展示予定のシューティングゲーム向けコントローラーの、組み込み側（ファームウェア）リポジトリです。
+
+M5Stack StickS3 上で動作し、内蔵ジャイロセンサーによる照準操作とトリガー/リロード入力を読み取り、USBシリアル経由でPC(Unity)側に送信します。PC側の受信・ゲーム本体はこのリポジトリには含まれません。
+
+## 出力
+
+コントローラーからPC(Unity)へ、USBシリアル経由でJSON（改行区切り、1行1メッセージ）を一方向に送信します。ACK等のハンドシェイクはありません。
+
+想定している内容:
+- ジャイロ由来の照準角度
+- トリガー / リロードの状態
+- 残弾数（コントローラー側でカウント）
+
+具体的なフィールド名・型などのメッセージ仕様は **未確定** です。
+
+## 使用技術
+
+- 言語: [Rust](https://www.rust-lang.org/)（`no_std` / `no_main`）
+- マイコン: M5Stack StickS3 (ESP32-S3-PICO-1-N8R8 / IMU: BMI270)
+- HAL: [esp-hal](https://github.com/esp-rs/esp-hal)
+- 実行環境: [esp-rtos](https://github.com/esp-rs/esp-hal)（embassy executor）
+- IMUドライバ: [`bmi2`](https://crates.io/crates/bmi2)
+
+## 使い方
+
+### 必要環境
+- ESP32-S3向けのRustツールチェーン（[esp-rs](https://github.com/esp-rs/rust-build)。`rust-toolchain.toml` で `channel = "esp"` を指定済み）
+- [`espflash`](https://github.com/esp-rs/espflash)
+
+### ビルド
+```bash
+cargo build --release
+```
+
+### 書き込み・実行
+```bash
+cargo run --release
+```
+`.cargo/config.toml` で `espflash flash --monitor` がランナーとして設定されているため、ビルド後に自動で書き込み・シリアルモニタ起動まで行われます。
+
+### ジャイロ動作確認用バイナリ
+ジャイロの読み取り値をシリアル出力で確認できる単体テスト的なバイナリです。
+```bash
+cargo run --bin gyro
+```
+
+## ハードウェア
+
+- マイコン: M5Stack StickS3
+- 入力: マイクロスイッチ（トリガー・リロード用）
+- 基板・筐体: **未定**
