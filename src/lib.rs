@@ -1,2 +1,6 @@
 #![no_std]
-pub mod sensor;
+pub mod game;
+pub mod input;
+pub mod output;
+pub mod gyro;
+pub mod types;

@@ -51,3 +51,48 @@ cargo run --bin gyro
 - マイコン: M5Stack StickS3
 - 入力: マイクロスイッチ（トリガー・リロード用）
 - 基板・筐体: **未定**
+
+---
+
+# タスク設計
+
+```mermaid
+flowchart TD
+    subgraph input["入力"]
+        trigger_task
+        reload_task
+        calib_button_task
+    end
+
+    subgraph core["中核"]
+        game_state_task
+        sensor_task
+    end
+
+    subgraph output["出力"]
+        display_task
+        json_output_task
+        sound_task
+    end
+
+    trigger_task -- "GameEvent::Fired" --> game_event(["Channel&lt;GameEvent&gt;"])
+    reload_task -- "GameEvent::Reloaded" --> game_event
+    game_event --> game_state_task
+
+    calib_button_task -- "CalibKind" --> calib_cmd(["Signal&lt;CalibKind&gt;"])
+    calib_cmd --> sensor_task
+
+    calib_button_task -- "CalibUiState" --> calib_ui(["Watch&lt;CalibUiState&gt;"])
+    calib_ui --> display_task
+
+    game_state_task -- "GameState" --> game_state(["Watch&lt;GameState&gt;"])
+    game_state --> display_task
+    game_state --> json_output_task
+
+    game_state_task -- "SoundEvent" --> sound_event(["Channel&lt;SoundEvent&gt;"])
+    sound_event --> sound_task
+
+    sensor_task -- "(pitch, yaw)" --> gyro_watch(["Watch&lt;f32, f32&gt;"])
+    gyro_watch --> display_task
+    gyro_watch --> json_output_task
+```

@@ -5,9 +5,12 @@ use bmi2::{
     types::{Burst, GyrRange, GyrRangeVal, OisRange, PwrCtrl},
 };
 use embassy_executor;
-use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, watch};
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, watch, signal, channel};
+use embassy_futures::select::{Select, Either};
 use embassy_time::{Duration, Ticker};
-use esp_hal::{Blocking, delay::Delay, i2c::master::I2c};
+use esp_hal::{Blocking, delay::Delay, i2c::master::I2c, gpio::Input};
+
+use crate::types::{CalibStatus, CalibKind};
 
 const RANGE: GyrRangeVal = GyrRangeVal::Range2000;
 const RANGE_NUM: f32 = 2000.0;
@@ -21,12 +24,15 @@ pub struct Gyro<'a, const N: usize> {
     yaw_angle: f32,
     imu: Bmi2<I2cInterface<I2c<'a, Blocking>>, Delay, N>,
     gyro_watch: watch::Sender<'a, CriticalSectionRawMutex, (f32, f32), 2>,
+    calib_status: CalibStatus,
+    trigger_channel: channel::Receiver<'a, CriticalSectionRawMutex, (), 3>,
 }
 
 impl<'a, const N: usize> Gyro<'a, N> {
     pub fn new(
         i2c: I2c<'a, Blocking>,
         gyro_watch: watch::Sender<'a, CriticalSectionRawMutex, (f32, f32), 2>,
+        trigger_channel: channel::Receiver<'a, CriticalSectionRawMutex, (), 3>,
     ) -> Self {
         let mut imu = Bmi2::new_i2c(i2c, Delay::new(), I2cAddr::default(), Burst::default());
 
@@ -53,6 +59,8 @@ impl<'a, const N: usize> Gyro<'a, N> {
             yaw_angle: 0.0,
             imu,
             gyro_watch,
+            calib_status: CalibStatus::Idle,
+            trigger_channel,
         }
     }
 
@@ -75,8 +83,9 @@ impl<'a, const N: usize> Gyro<'a, N> {
     }
 }
 
+
 #[embassy_executor::task]
-pub async fn sensor_task(mut gyro: Gyro<'static, 512>) {
+pub async fn gyro_task(mut gyro: Gyro<'static, 512>) {
     let mut ticker = Ticker::every(Duration::from_millis((SAMPLE_RATE * 1000.0) as u64));
 
     loop {
