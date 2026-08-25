@@ -13,7 +13,7 @@ use embassy_time::{Duration, Timer};
 use esp_hal::{clock::CpuClock, i2c::master::I2c, timer::timg::TimerGroup, gpio::{Input, InputConfig, Pull}};
 use esp_println::println;
 
-use funfes2026_controller::{gyro, input, types::*};
+use funfes2026_controller::{game, gyro, input, types::*};
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
@@ -39,8 +39,8 @@ async fn main(spawner: Spawner) -> ! {
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0);
 
-    static GYRO_WATCH: Watch<CriticalSectionRawMutex, (f32, f32), 2> = Watch::new();
-    static GYRO_CALIB: Signal<CriticalSectionRawMutex, CalibKind> = Signal::new();
+    static GYRO_WATCH: Watch<CriticalSectionRawMutex, (f32, f32), 3> = Watch::new();
+    static GYRO_CALIB: Watch<CriticalSectionRawMutex, CalibStatus, 3> = Watch::new();
     static TRIGGER_CHANNEL: Channel<CriticalSectionRawMutex, (), 3> = Channel::new();
     static GAME_EVENT_CHANNEL: Channel<CriticalSectionRawMutex, GameEvent, 3> = Channel::new();
 
@@ -50,7 +50,8 @@ async fn main(spawner: Spawner) -> ! {
             .with_sda(peripherals.GPIO47)
             .with_scl(peripherals.GPIO48),
         GYRO_WATCH.sender(),
-        TRIGGER_CHANNEL.receiver(),
+        GYRO_CALIB.receiver().unwrap(),
+        GYRO_CALIB.sender(),
     );
 
     spawner.spawn(gyro::gyro_task(gyro)).unwrap();
@@ -59,16 +60,31 @@ async fn main(spawner: Spawner) -> ! {
     let trigger_button = input::TriggerButton::new(Input::new(peripherals.GPIO12, trigger_button_config), TRIGGER_CHANNEL.sender());
 
     spawner.spawn(input::trigger_task(trigger_button)).unwrap();
-    
+
     let calib_button_config = InputConfig::default().with_pull(Pull::Up);
-    let calib_button = input::CalibButton::new(&GYRO_CALIB, GAME_EVENT_CHANNEL.sender(), TRIGGER_CHANNEL.receiver(), Input::new(peripherals.GPIO11, calib_button_config));
-    let mut receiver = GYRO_WATCH.receiver().unwrap();
+    let calib_button = input::CalibButton::new(GYRO_CALIB.sender(), GAME_EVENT_CHANNEL.sender(), Input::new(peripherals.GPIO11, calib_button_config));
 
     spawner.spawn(input::calib_button_task(calib_button)).unwrap();
 
-    loop {
-        Timer::after(Duration::from_secs(3600)).await;
-    }
+    let trigger_router = game::TriggerRouter::new(
+        TRIGGER_CHANNEL.receiver(),
+        GYRO_CALIB.receiver().unwrap(),
+        GYRO_CALIB.sender(),
+        GYRO_WATCH.receiver().unwrap(),
+        GAME_EVENT_CHANNEL.sender(),
+    );
 
-    // for inspiration have a look at the examples at https://github.com/esp-rs/esp-hal/tree/esp-hal-v1.0.0/examples
+    spawner.spawn(game::trigger_router_task(trigger_router)).unwrap();
+
+    GYRO_CALIB.sender().send(CalibStatus::Running(CalibKind::Stationary));
+
+    let mut receiver = GYRO_CALIB.receiver().unwrap();
+    let mut gyro_watch = GYRO_WATCH.receiver().unwrap();
+
+    loop {
+        Timer::after(Duration::from_secs(1)).await;
+        let value = receiver.get().await;
+        let gyro_watch_value = gyro_watch.get().await;
+        println!("{:?} {:?}", value, gyro_watch_value);
+    }
 }

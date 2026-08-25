@@ -65,8 +65,9 @@ flowchart TD
     end
 
     subgraph core["中核"]
+        gyro_task
+        trigger_router_task
         game_state_task
-        sensor_task
     end
 
     subgraph output["出力"]
@@ -75,15 +76,23 @@ flowchart TD
         sound_task
     end
 
-    trigger_task -- "GameEvent::Fired" --> game_event(["Channel&lt;GameEvent&gt;"])
+    trigger_task -- "()" --> trigger_ch(["Channel&lt;()&gt;"])
+    trigger_ch --> trigger_router_task
+
+    calib_button_task -- "CalibStatus" --> calib_watch(["Watch&lt;CalibStatus&gt;"])
+    calib_watch --> gyro_task
+    calib_watch --> trigger_router_task
+
+    gyro_task -- "(pitch, yaw)" --> gyro_watch(["Watch&lt;(f32, f32)&gt;"])
+    gyro_watch --> trigger_router_task
+    gyro_watch --> display_task
+    gyro_watch --> json_output_task
+
+    trigger_router_task -- "GameEvent::Fired" --> game_event(["Channel&lt;GameEvent&gt;"])
     reload_task -- "GameEvent::Reloaded" --> game_event
     game_event --> game_state_task
 
-    calib_button_task -- "CalibKind" --> calib_cmd(["Signal&lt;CalibKind&gt;"])
-    calib_cmd --> sensor_task
-
-    calib_button_task -- "CalibUiState" --> calib_ui(["Watch&lt;CalibUiState&gt;"])
-    calib_ui --> display_task
+    trigger_router_task -. "四隅取得完了時に CalibStatus::Idle" .-> calib_watch
 
     game_state_task -- "GameState" --> game_state(["Watch&lt;GameState&gt;"])
     game_state --> display_task
@@ -91,8 +100,9 @@ flowchart TD
 
     game_state_task -- "SoundEvent" --> sound_event(["Channel&lt;SoundEvent&gt;"])
     sound_event --> sound_task
-
-    sensor_task -- "(pitch, yaw)" --> gyro_watch(["Watch&lt;f32, f32&gt;"])
-    gyro_watch --> display_task
-    gyro_watch --> json_output_task
 ```
+
+トリガー入力の意味（発砲 / キャリブレーション操作）は `CalibStatus` によって変わるため、`trigger_task` からの入力は `trigger_router_task` が一箇所で受け、現在の `CalibStatus` を見て振り分ける:
+- `Idle`: `GameEvent::Fired` を送出（通常の発砲）
+- `Running(Orientation)`: その時点のジャイロ角度を画面四隅の1点として記録し、4点集まったら `CalibStatus::Idle` に戻す
+- それ以外（`Selecting` / `Running(Stationary)`）: 無視
