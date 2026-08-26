@@ -15,7 +15,7 @@ const RANGE: GyrRangeVal = GyrRangeVal::Range2000;
 const RANGE_NUM: f32 = 2000.0;
 const ALPHA: f32 = 0.1;
 const SAMPLE_RATE: f32 = 0.01;
-const STATIONARY_SAMPLE_COUNT: usize = 100;
+const STATIONARY_SAMPLE_COUNT: usize = 500;
 
 pub struct Gyro<'a, const N: usize> {
     pitch_speed: f32,
@@ -80,7 +80,6 @@ impl<'a, const N: usize> Gyro<'a, N> {
 
         if self.calib_receiver.try_get() == Some(CalibStatus::Running(CalibKind::Stationary)) {
             self.record_stationary_sample(pitch_rate, yaw_rate);
-            return;
         }
 
         self.pitch_speed = Self::calc_ave(self.pitch_speed, pitch_rate - self.pitch_offset);

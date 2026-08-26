@@ -77,14 +77,15 @@ async fn main(spawner: Spawner) -> ! {
     spawner.spawn(game::trigger_router_task(trigger_router)).unwrap();
 
     GYRO_CALIB.sender().send(CalibStatus::Running(CalibKind::Stationary));
-
     let mut receiver = GYRO_CALIB.receiver().unwrap();
+    receiver.changed_and(|x| *x == CalibStatus::Running(CalibKind::Stationary)).await;
+
     let mut gyro_watch = GYRO_WATCH.receiver().unwrap();
 
     loop {
         Timer::after(Duration::from_secs(1)).await;
-        let value = receiver.get().await;
         let gyro_watch_value = gyro_watch.get().await;
-        println!("{:?} {:?}", value, gyro_watch_value);
+        let calib_status = receiver.get().await;
+        println!("{:?} {:?}", gyro_watch_value, calib_status);
     }
 }
