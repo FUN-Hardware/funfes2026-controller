@@ -8,9 +8,19 @@
 #![deny(clippy::large_stack_frames)]
 
 use embassy_executor::Spawner;
-use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal, watch::Watch, channel::{Channel, self}};
+use embassy_sync::{
+    blocking_mutex::raw::CriticalSectionRawMutex,
+    channel::{self, Channel},
+    signal::Signal,
+    watch::Watch,
+};
 use embassy_time::{Duration, Timer};
-use esp_hal::{clock::CpuClock, i2c::master::I2c, timer::timg::TimerGroup, gpio::{Input, InputConfig, Pull}};
+use esp_hal::{
+    clock::CpuClock,
+    gpio::{Input, InputConfig, Pull},
+    i2c::master::I2c,
+    timer::timg::TimerGroup,
+};
 use esp_println::println;
 
 use funfes2026_controller::{game, gyro, input, types::*};
@@ -57,14 +67,23 @@ async fn main(spawner: Spawner) -> ! {
     spawner.spawn(gyro::gyro_task(gyro)).unwrap();
 
     let trigger_button_config = InputConfig::default().with_pull(Pull::Up);
-    let trigger_button = input::TriggerButton::new(Input::new(peripherals.GPIO12, trigger_button_config), TRIGGER_CHANNEL.sender());
+    let trigger_button = input::TriggerButton::new(
+        Input::new(peripherals.GPIO12, trigger_button_config),
+        TRIGGER_CHANNEL.sender(),
+    );
 
     spawner.spawn(input::trigger_task(trigger_button)).unwrap();
 
     let calib_button_config = InputConfig::default().with_pull(Pull::Up);
-    let calib_button = input::CalibButton::new(GYRO_CALIB.sender(), GAME_EVENT_CHANNEL.sender(), Input::new(peripherals.GPIO11, calib_button_config));
+    let calib_button = input::CalibButton::new(
+        GYRO_CALIB.sender(),
+        GAME_EVENT_CHANNEL.sender(),
+        Input::new(peripherals.GPIO11, calib_button_config),
+    );
 
-    spawner.spawn(input::calib_button_task(calib_button)).unwrap();
+    spawner
+        .spawn(input::calib_button_task(calib_button))
+        .unwrap();
 
     let trigger_router = game::TriggerRouter::new(
         TRIGGER_CHANNEL.receiver(),
@@ -74,11 +93,17 @@ async fn main(spawner: Spawner) -> ! {
         GAME_EVENT_CHANNEL.sender(),
     );
 
-    spawner.spawn(game::trigger_router_task(trigger_router)).unwrap();
+    spawner
+        .spawn(game::trigger_router_task(trigger_router))
+        .unwrap();
 
-    GYRO_CALIB.sender().send(CalibStatus::Running(CalibKind::Stationary));
+    GYRO_CALIB
+        .sender()
+        .send(CalibStatus::Running(CalibKind::Stationary));
     let mut receiver = GYRO_CALIB.receiver().unwrap();
-    receiver.changed_and(|x| *x == CalibStatus::Running(CalibKind::Stationary)).await;
+    receiver
+        .changed_and(|x| *x == CalibStatus::Running(CalibKind::Stationary))
+        .await;
 
     let mut gyro_watch = GYRO_WATCH.receiver().unwrap();
 

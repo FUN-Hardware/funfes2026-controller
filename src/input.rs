@@ -88,16 +88,21 @@ impl<'a> CalibButton<'a> {
         if duration < Duration::from_millis(50) {
             // 無視
         } else {
-            let now_state = self.gyro_calib.try_get().expect("failed to get gyro calib state");
+            let now_state = self
+                .gyro_calib
+                .try_get()
+                .expect("failed to get gyro calib state");
             if duration < Duration::from_millis(1000) {
                 // 短押し
                 if now_state == CalibStatus::Selecting {
-                    self.gyro_calib.send(CalibStatus::Running(CalibKind::Orientation));
+                    self.gyro_calib
+                        .send(CalibStatus::Running(CalibKind::Orientation));
                 }
             } else {
                 // 長押し
                 if now_state == CalibStatus::Selecting {
-                    self.gyro_calib.send(CalibStatus::Running(CalibKind::Stationary));
+                    self.gyro_calib
+                        .send(CalibStatus::Running(CalibKind::Stationary));
                 } else if now_state == CalibStatus::Idle {
                     self.gyro_calib.send(CalibStatus::Selecting);
                 }

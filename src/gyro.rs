@@ -9,7 +9,7 @@ use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, watch};
 use embassy_time::{Duration, Ticker};
 use esp_hal::{Blocking, delay::Delay, i2c::master::I2c};
 
-use crate::types::{CalibStatus, CalibKind};
+use crate::types::{CalibKind, CalibStatus};
 
 const RANGE: GyrRangeVal = GyrRangeVal::Range2000;
 const RANGE_NUM: f32 = 2000.0;
@@ -117,7 +117,6 @@ impl<'a, const N: usize> Gyro<'a, N> {
         prev_ave * ALPHA + new_val * (1.0 - ALPHA)
     }
 }
-
 
 #[embassy_executor::task]
 pub async fn gyro_task(mut gyro: Gyro<'static, 512>) {
