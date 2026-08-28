@@ -15,7 +15,7 @@ const RANGE: GyrRangeVal = GyrRangeVal::Range2000;
 const RANGE_NUM: f32 = 2000.0;
 const ALPHA: f32 = 0.1;
 const SAMPLE_RATE: f32 = 0.01;
-const STATIONARY_SAMPLE_COUNT: usize = 500;
+const STATIONARY_SAMPLE_COUNT: usize = 100;
 
 pub struct Gyro<'a, const N: usize> {
     pitch_speed: f32,

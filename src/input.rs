@@ -1,7 +1,6 @@
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel, watch};
 use embassy_time::{Duration, Instant};
 use esp_hal::gpio::Input;
-use esp_println::println;
 
 use crate::types::{CalibKind, CalibStatus, GameEvent};
 
@@ -31,7 +30,7 @@ impl<'a> TriggerButton<'a> {
 
     async fn fire(&self) {
         self.trigger_sender.send(()).await;
-        println!("triggered");
+        crate::debug_println!("triggered");
     }
 }
 

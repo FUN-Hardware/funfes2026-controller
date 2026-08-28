@@ -8,12 +8,7 @@
 #![deny(clippy::large_stack_frames)]
 
 use embassy_executor::Spawner;
-use embassy_sync::{
-    blocking_mutex::raw::CriticalSectionRawMutex,
-    channel::{self, Channel},
-    signal::Signal,
-    watch::Watch,
-};
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel, watch::Watch};
 use embassy_time::{Duration, Timer};
 use esp_hal::{
     clock::CpuClock,
@@ -23,7 +18,7 @@ use esp_hal::{
 };
 use esp_println::println;
 
-use funfes2026_controller::{game, gyro, input, types::*};
+use funfes2026_controller::{game, gyro, input, output, types::*};
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
@@ -31,8 +26,6 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-// This creates a default app-descriptor required by the esp-idf bootloader.
-// For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
 esp_bootloader_esp_idf::esp_app_desc!();
 
 #[allow(
@@ -53,6 +46,8 @@ async fn main(spawner: Spawner) -> ! {
     static GYRO_CALIB: Watch<CriticalSectionRawMutex, CalibStatus, 3> = Watch::new();
     static TRIGGER_CHANNEL: Channel<CriticalSectionRawMutex, (), 3> = Channel::new();
     static GAME_EVENT_CHANNEL: Channel<CriticalSectionRawMutex, GameEvent, 3> = Channel::new();
+    static ORIENTATION_RANGE_WATCH: Watch<CriticalSectionRawMutex, [(f32, f32); 2], 1> =
+        Watch::new();
 
     let gyro = gyro::Gyro::new(
         I2c::new(peripherals.I2C0, Default::default())
@@ -91,6 +86,7 @@ async fn main(spawner: Spawner) -> ! {
         GYRO_CALIB.sender(),
         GYRO_WATCH.receiver().unwrap(),
         GAME_EVENT_CHANNEL.sender(),
+        ORIENTATION_RANGE_WATCH.sender(),
     );
 
     spawner
@@ -101,16 +97,21 @@ async fn main(spawner: Spawner) -> ! {
         .sender()
         .send(CalibStatus::Running(CalibKind::Stationary));
     let mut receiver = GYRO_CALIB.receiver().unwrap();
-    receiver
-        .changed_and(|x| *x == CalibStatus::Running(CalibKind::Stationary))
-        .await;
+    receiver.changed_and(|x| *x == CalibStatus::Idle).await;
+    GYRO_CALIB
+        .sender()
+        .send(CalibStatus::Running(CalibKind::Orientation));
 
-    let mut gyro_watch = GYRO_WATCH.receiver().unwrap();
+    spawner
+        .spawn(output::json_output_task(
+            ORIENTATION_RANGE_WATCH.receiver().unwrap(),
+            GYRO_WATCH.receiver().unwrap(),
+        ))
+        .unwrap();
 
     loop {
         Timer::after(Duration::from_secs(1)).await;
-        let gyro_watch_value = gyro_watch.get().await;
         let calib_status = receiver.get().await;
-        println!("{:?} {:?}", gyro_watch_value, calib_status);
+        funfes2026_controller::debug_println!("{:?}", calib_status);
     }
 }
