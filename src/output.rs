@@ -40,7 +40,7 @@ pub async fn json_output_task(
 
 fn clamp(value: f32, zero: f32, one: f32) -> f32 {
     let x = (value - zero) / (one - zero);
-    f32::max(0.0, f32::min(1.0, x))
+    x.clamp(0.0, 1.0)
 }
 
 #[embassy_executor::task]
