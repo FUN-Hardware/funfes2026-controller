@@ -45,7 +45,8 @@ async fn main(spawner: Spawner) -> ! {
     static GYRO_WATCH: Watch<CriticalSectionRawMutex, (f32, f32), 3> = Watch::new();
     static GYRO_CALIB: Watch<CriticalSectionRawMutex, CalibStatus, 3> = Watch::new();
     static TRIGGER_CHANNEL: Channel<CriticalSectionRawMutex, (), 3> = Channel::new();
-    static GAME_EVENT_CHANNEL: Channel<CriticalSectionRawMutex, GameEvent, 3> = Channel::new();
+    static AMMO_WATCH: Watch<CriticalSectionRawMutex, u8, 3> = Watch::new();
+    static SOUND_EVENT_CHANNEL: Channel<CriticalSectionRawMutex, SoundEvent, 3> = Channel::new();
     static ORIENTATION_RANGE_WATCH: Watch<CriticalSectionRawMutex, [(f32, f32); 2], 1> =
         Watch::new();
 
@@ -63,7 +64,7 @@ async fn main(spawner: Spawner) -> ! {
 
     let trigger_button_config = InputConfig::default().with_pull(Pull::Up);
     let trigger_button = input::TriggerButton::new(
-        Input::new(peripherals.GPIO12, trigger_button_config),
+        Input::new(peripherals.GPIO12, trigger_button_config), //12はStickの横のボタン、仮置きしているだけ
         TRIGGER_CHANNEL.sender(),
     );
 
@@ -72,8 +73,7 @@ async fn main(spawner: Spawner) -> ! {
     let calib_button_config = InputConfig::default().with_pull(Pull::Up);
     let calib_button = input::CalibButton::new(
         GYRO_CALIB.sender(),
-        GAME_EVENT_CHANNEL.sender(),
-        Input::new(peripherals.GPIO11, calib_button_config),
+        Input::new(peripherals.GPIO9, calib_button_config), // 基板作成待ちのため、暫定的にM5StickS3内蔵ボタンを使用
     );
 
     spawner
@@ -85,12 +85,23 @@ async fn main(spawner: Spawner) -> ! {
         GYRO_CALIB.receiver().unwrap(),
         GYRO_CALIB.sender(),
         GYRO_WATCH.receiver().unwrap(),
-        GAME_EVENT_CHANNEL.sender(),
+        AMMO_WATCH.sender(),
+        SOUND_EVENT_CHANNEL.sender(),
         ORIENTATION_RANGE_WATCH.sender(),
     );
 
     spawner
         .spawn(game::trigger_router_task(trigger_router))
+        .unwrap();
+
+    let ammo_button_config = InputConfig::default().with_pull(Pull::Up);
+
+    spawner
+        .spawn(input::reload_task(
+            AMMO_WATCH.sender(),
+            SOUND_EVENT_CHANNEL.sender(),
+            Input::new(peripherals.GPIO11, ammo_button_config), // 基板作成待ちのため、暫定的にM5StickS3内蔵ボタンを使用
+        ))
         .unwrap();
 
     GYRO_CALIB
@@ -106,7 +117,12 @@ async fn main(spawner: Spawner) -> ! {
         .spawn(output::json_output_task(
             ORIENTATION_RANGE_WATCH.receiver().unwrap(),
             GYRO_WATCH.receiver().unwrap(),
+            AMMO_WATCH.receiver().unwrap(),
         ))
+        .unwrap();
+
+    spawner
+        .spawn(output::sound_task(SOUND_EVENT_CHANNEL.receiver()))
         .unwrap();
 
     loop {

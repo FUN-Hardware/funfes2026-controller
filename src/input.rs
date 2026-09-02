@@ -2,7 +2,9 @@ use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel, watch}
 use embassy_time::{Duration, Instant};
 use esp_hal::gpio::Input;
 
-use crate::types::{CalibKind, CalibStatus, GameEvent};
+use crate::types::{CalibKind, CalibStatus, SoundEvent};
+
+const AMMO_MAX: u8 = 5;
 
 pub struct TriggerButton<'a> {
     trigger_button: Input<'a>,
@@ -45,13 +47,25 @@ pub async fn trigger_task(mut trigger_button: TriggerButton<'static>) {
 }
 
 #[embassy_executor::task]
-pub async fn reload_task() {
-    todo!()
+pub async fn reload_task(
+    ammo_sender: watch::Sender<'static, CriticalSectionRawMutex, u8, 3>,
+    sound_event_sender: channel::Sender<'static, CriticalSectionRawMutex, SoundEvent, 3>,
+    mut ammo_button: Input<'static>,
+) {
+    ammo_sender.send(AMMO_MAX);
+    let mut last_push = Instant::now();
+    loop {
+        ammo_button.wait_for_falling_edge().await;
+        if last_push.elapsed() > Duration::from_millis(500) {
+            sound_event_sender.send(SoundEvent::Reload).await;
+            ammo_sender.send(AMMO_MAX);
+        }
+        last_push = Instant::now();
+    }
 }
 
 pub struct CalibButton<'a> {
     gyro_calib: watch::Sender<'a, CriticalSectionRawMutex, CalibStatus, 3>,
-    game_event_sender: channel::Sender<'a, CriticalSectionRawMutex, GameEvent, 3>,
     calib_button: Input<'a>,
     last_press: Option<Instant>,
 }
@@ -59,13 +73,11 @@ pub struct CalibButton<'a> {
 impl<'a> CalibButton<'a> {
     pub fn new(
         gyro_calib: watch::Sender<'a, CriticalSectionRawMutex, CalibStatus, 3>,
-        game_event_sender: channel::Sender<'a, CriticalSectionRawMutex, GameEvent, 3>,
         calib_button: Input<'a>,
     ) -> Self {
         gyro_calib.send(CalibStatus::Idle);
         Self {
             gyro_calib,
-            game_event_sender,
             calib_button,
             last_press: None,
         }

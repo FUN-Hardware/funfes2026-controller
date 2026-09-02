@@ -6,15 +6,17 @@ M5Stack StickS3 上で動作し、内蔵ジャイロセンサーによる照準�
 
 ## 出力
 
-コントローラーからPC(Unity)へ、USBシリアル経由でJSON（改行区切り、1行1メッセージ）を一方向に送信します。ACK等のハンドシェイクはありません。
+コントローラーからPC(Unity)へ、USBシリアル経由でJSON（改行区切り、1行1メッセージ）を一方向に送信します。ACK等のハンドシェイクはありません。約1秒間隔（`Ticker::every(1000ms)`）で送信されます。
 
-想定している内容:
+```json
+{"x": 0.5, "y": 0.5, "ammo": 5}
+```
 
-- ジャイロ由来の照準角度
-- トリガー / リロードの状態
-- 残弾数（コントローラー側でカウント）
-
-具体的なフィールド名・型などのメッセージ仕様は **未確定** です。
+| フィールド | 型 | 内容 |
+| --- | --- | --- |
+| `x` | `f32` | 照準の左右位置。キャリブレーション範囲に対する正規化値（左端が `0.0`、右端が `1.0`）で、範囲外は `0.0`〜`1.0` にクランプされる |
+| `y` | `f32` | 照準の上下位置。左下原点で `0.0`〜`1.0`（下端が `0.0`、上端が `1.0`）に正規化され、同様にクランプされる |
+| `ammo` | `u8` | 残弾数 |
 
 ## 使用技術
 
@@ -74,7 +76,6 @@ flowchart TD
     subgraph core["中核"]
         gyro_task
         trigger_router_task
-        game_state_task
     end
 
     subgraph output["出力"]
@@ -89,6 +90,7 @@ flowchart TD
     calib_button_task -- "CalibStatus" --> calib_watch(["Watch&lt;CalibStatus&gt;"])
     calib_watch --> gyro_task
     calib_watch --> trigger_router_task
+    calib_watch --> display_task
 
     gyro_task -- "(pitch, yaw)" --> gyro_watch(["Watch&lt;(f32, f32)&gt;"])
     gyro_watch --> trigger_router_task
@@ -97,24 +99,22 @@ flowchart TD
     trigger_router_task -- "((pitch_min, pitch_max), (yaw_min, yaw_max))" --> calib_range_watch(["Watch&lt;((f32, f32), (f32, f32))&gt;"])
     calib_range_watch --> json_output_task
 
-    trigger_router_task -- "GameEvent::Fired" --> game_event(["Channel&lt;GameEvent&gt;"])
-    reload_task -- "GameEvent::Reloaded" --> game_event
-    game_event --> game_state_task
+    trigger_router_task -- "残弾数を減算" --> ammo_watch(["Watch&lt;u8&gt;"])
+    reload_task -- "残弾数を一定値へ代入" --> ammo_watch
+    ammo_watch --> display_task
+    ammo_watch --> json_output_task
 
     trigger_router_task -. "四隅取得完了時に CalibStatus::Idle" .-> calib_watch
 
-    game_state_task -- "GameState" --> game_state(["Watch&lt;GameState&gt;"])
-    game_state --> display_task
-    game_state --> json_output_task
-
-    game_state_task -- "SoundEvent" --> sound_event(["Channel&lt;SoundEvent&gt;"])
+    trigger_router_task -- "SoundEvent::Fire" --> sound_event(["Channel&lt;SoundEvent&gt;"])
+    reload_task -- "SoundEvent::Reload" --> sound_event
     sound_event --> sound_task
 ```
 
 トリガー入力の意味（発砲 / キャリブレーション操作）は `CalibStatus` によって変わるため、`trigger_task` からの入力は `trigger_router_task` が一箇所で受け、現在の `CalibStatus` を見て振り分ける:
 
-- `Idle`: `GameEvent::Fired` を送出（通常の発砲）
+- `Idle`: 残弾数を減算し（`ammo_watch`）、`SoundEvent::Fire` を送出（通常の発砲）
 - `Running(Orientation)`: その時点のジャイロ角度を画面四隅の1点として記録し、4点集まったら pitch/yaw それぞれの `(min, max)` を `calib_range_watch` に送出したうえで `CalibStatus::Idle` に戻す
 - それ以外（`Selecting` / `Running(Stationary)`）: 無視
 
-`display_task` / `sound_task` は残弾数・状態や発射/リロードイベントにのみ反応するため、ジャイロ角度・キャリブレーション範囲は購読しない。角度の0〜1正規化は `json_output_task` が自身の出力タイミングでのみ、`gyro_watch` の最新角度と `calib_range_watch` の `(min, max)` から都度計算する（ジャイロの取得間隔ごとに計算し続けることはしない）。
+`reload_task` は残弾数を一定値へ代入し、`SoundEvent::Reload` を送出する。`display_task` / `sound_task` は残弾数・状態やサウンドイベントにのみ反応するため、ジャイロ角度・キャリブレーション範囲は購読しない。角度の0〜1正規化は `json_output_task` が自身の出力タイミングでのみ、`gyro_watch` の最新角度と `calib_range_watch` の `(min, max)` から都度計算する（ジャイロの取得間隔ごとに計算し続けることはしない）。
