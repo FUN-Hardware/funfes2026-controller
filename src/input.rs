@@ -25,7 +25,7 @@ impl<'a> TriggerButton<'a> {
     }
 
     fn debounced(&mut self) -> bool {
-        let ok = self.last_press.elapsed() > Duration::from_millis(50);
+        let ok = self.last_press.elapsed() > Duration::from_millis(100);
         self.last_press = Instant::now();
         ok
     }

@@ -64,7 +64,7 @@ async fn main(spawner: Spawner) -> ! {
 
     let trigger_button_config = InputConfig::default().with_pull(Pull::Up);
     let trigger_button = input::TriggerButton::new(
-        Input::new(peripherals.GPIO12, trigger_button_config), //12はStickの横のボタン、仮置きしているだけ
+        Input::new(peripherals.GPIO9, trigger_button_config), //12はStickの横のボタン、仮置きしているだけ
         TRIGGER_CHANNEL.sender(),
     );
 
@@ -73,7 +73,7 @@ async fn main(spawner: Spawner) -> ! {
     let calib_button_config = InputConfig::default().with_pull(Pull::Up);
     let calib_button = input::CalibButton::new(
         GYRO_CALIB.sender(),
-        Input::new(peripherals.GPIO9, calib_button_config), // 基板作成待ちのため、暫定的にM5StickS3内蔵ボタンを使用
+        Input::new(peripherals.GPIO11, calib_button_config),
     );
 
     spawner
@@ -100,7 +100,7 @@ async fn main(spawner: Spawner) -> ! {
         .spawn(input::reload_task(
             AMMO_WATCH.sender(),
             SOUND_EVENT_CHANNEL.sender(),
-            Input::new(peripherals.GPIO11, ammo_button_config), // 基板作成待ちのため、暫定的にM5StickS3内蔵ボタンを使用
+            Input::new(peripherals.GPIO10, ammo_button_config), // 基板作成待ちのため、暫定的にM5StickS3内蔵ボタンを使用
         ))
         .unwrap();
 
