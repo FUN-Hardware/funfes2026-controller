@@ -16,6 +16,7 @@ macro_rules! debug_println {
     }};
 }
 
+pub mod button;
 pub mod game;
 pub mod gyro;
 pub mod input;

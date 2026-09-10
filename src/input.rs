@@ -2,12 +2,15 @@ use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel, watch}
 use embassy_time::{Duration, Instant};
 use esp_hal::gpio::Input;
 
-use crate::types::{CalibKind, CalibStatus, SoundEvent};
+use crate::{
+    button::Button,
+    types::{CalibKind, CalibStatus, SoundEvent},
+};
 
 const AMMO_MAX: u8 = 5;
 
 pub struct TriggerButton<'a> {
-    trigger_button: Input<'a>,
+    trigger_button: Button<'a>,
     trigger_sender: channel::Sender<'a, CriticalSectionRawMutex, (), 3>,
     last_press: Instant,
 }
@@ -18,16 +21,10 @@ impl<'a> TriggerButton<'a> {
         trigger_sender: channel::Sender<'a, CriticalSectionRawMutex, (), 3>,
     ) -> Self {
         Self {
-            trigger_button,
+            trigger_button: Button::new(trigger_button),
             trigger_sender,
             last_press: Instant::now(),
         }
-    }
-
-    fn debounced(&mut self) -> bool {
-        let ok = self.last_press.elapsed() > Duration::from_millis(100);
-        self.last_press = Instant::now();
-        ok
     }
 
     async fn fire(&self) {
@@ -37,10 +34,9 @@ impl<'a> TriggerButton<'a> {
 
     async fn run(&mut self) {
         loop {
-            self.trigger_button.wait_for_falling_edge().await;
-            if self.debounced() {
-                self.fire().await;
-            }
+            self.trigger_button.wait_for_press().await;
+            self.fire().await;
+            self.trigger_button.wait_for_release().await;
         }
     }
 }
@@ -54,23 +50,21 @@ pub async fn trigger_task(mut trigger_button: TriggerButton<'static>) {
 pub async fn reload_task(
     ammo_sender: watch::Sender<'static, CriticalSectionRawMutex, u8, 3>,
     sound_event_sender: channel::Sender<'static, CriticalSectionRawMutex, SoundEvent, 3>,
-    mut ammo_button: Input<'static>,
+    ammo_button: Input<'static>,
 ) {
     ammo_sender.send(AMMO_MAX);
-    let mut last_push = Instant::now();
+    let mut ammo_button = Button::new(ammo_button);
     loop {
-        ammo_button.wait_for_falling_edge().await;
-        if last_push.elapsed() > Duration::from_millis(500) {
-            sound_event_sender.send(SoundEvent::Reload).await;
-            ammo_sender.send(AMMO_MAX);
-        }
-        last_push = Instant::now();
+        ammo_button.wait_for_press().await;
+        sound_event_sender.send(SoundEvent::Reload).await;
+        ammo_sender.send(AMMO_MAX);
+        ammo_button.wait_for_release().await;
     }
 }
 
 pub struct CalibButton<'a> {
     gyro_calib: watch::Sender<'a, CriticalSectionRawMutex, CalibStatus, 3>,
-    calib_button: Input<'a>,
+    calib_button: Button<'a>,
     last_press: Option<Instant>,
 }
 
@@ -82,20 +76,8 @@ impl<'a> CalibButton<'a> {
         gyro_calib.send(CalibStatus::Idle);
         Self {
             gyro_calib,
-            calib_button,
+            calib_button: Button::new(calib_button),
             last_press: None,
-        }
-    }
-
-    fn handle_edge(&mut self) {
-        match self.last_press {
-            Some(instant) => {
-                self.classify_press(Instant::now() - instant);
-                self.last_press = None;
-            }
-            None => {
-                self.last_press = Some(Instant::now());
-            }
         }
     }
 
@@ -127,8 +109,8 @@ impl<'a> CalibButton<'a> {
 
     async fn run(&mut self) {
         loop {
-            self.calib_button.wait_for_any_edge().await;
-            self.handle_edge();
+            let duration = self.calib_button.wait_for_press_duration().await;
+            self.classify_press(duration);
         }
     }
 }
