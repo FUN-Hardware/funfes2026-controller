@@ -1,5 +1,5 @@
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel, watch};
-use embassy_time::{Duration, Instant};
+use embassy_time::Duration;
 use esp_hal::gpio::Input;
 
 use crate::{
@@ -12,7 +12,6 @@ const AMMO_MAX: u8 = 5;
 pub struct TriggerButton<'a> {
     trigger_button: Button<'a>,
     trigger_sender: channel::Sender<'a, CriticalSectionRawMutex, (), 3>,
-    last_press: Instant,
 }
 
 impl<'a> TriggerButton<'a> {
@@ -23,7 +22,6 @@ impl<'a> TriggerButton<'a> {
         Self {
             trigger_button: Button::new(trigger_button),
             trigger_sender,
-            last_press: Instant::now(),
         }
     }
 
@@ -65,7 +63,6 @@ pub async fn reload_task(
 pub struct CalibButton<'a> {
     gyro_calib: watch::Sender<'a, CriticalSectionRawMutex, CalibStatus, 3>,
     calib_button: Button<'a>,
-    last_press: Option<Instant>,
 }
 
 impl<'a> CalibButton<'a> {
@@ -77,7 +74,6 @@ impl<'a> CalibButton<'a> {
         Self {
             gyro_calib,
             calib_button: Button::new(calib_button),
-            last_press: None,
         }
     }
 
