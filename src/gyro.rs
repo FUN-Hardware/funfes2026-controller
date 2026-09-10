@@ -116,14 +116,18 @@ impl<'a, const N: usize> Gyro<'a, N> {
     fn calc_ave(prev_ave: f32, new_val: f32) -> f32 {
         prev_ave * ALPHA + new_val * (1.0 - ALPHA)
     }
+
+    async fn run(&mut self) {
+        let mut ticker = Ticker::every(Duration::from_millis((SAMPLE_RATE * 1000.0) as u64));
+
+        loop {
+            ticker.next().await;
+            self.sensor_read();
+        }
+    }
 }
 
 #[embassy_executor::task]
 pub async fn gyro_task(mut gyro: Gyro<'static, 512>) {
-    let mut ticker = Ticker::every(Duration::from_millis((SAMPLE_RATE * 1000.0) as u64));
-
-    loop {
-        ticker.next().await;
-        gyro.sensor_read();
-    }
+    gyro.run().await;
 }

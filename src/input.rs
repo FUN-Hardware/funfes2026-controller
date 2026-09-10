@@ -34,16 +34,20 @@ impl<'a> TriggerButton<'a> {
         self.trigger_sender.send(()).await;
         crate::debug_println!("triggered");
     }
+
+    async fn run(&mut self) {
+        loop {
+            self.trigger_button.wait_for_falling_edge().await;
+            if self.debounced() {
+                self.fire().await;
+            }
+        }
+    }
 }
 
 #[embassy_executor::task]
 pub async fn trigger_task(mut trigger_button: TriggerButton<'static>) {
-    loop {
-        trigger_button.trigger_button.wait_for_falling_edge().await;
-        if trigger_button.debounced() {
-            trigger_button.fire().await;
-        }
-    }
+    trigger_button.run().await;
 }
 
 #[embassy_executor::task]
@@ -120,12 +124,16 @@ impl<'a> CalibButton<'a> {
             }
         }
     }
+
+    async fn run(&mut self) {
+        loop {
+            self.calib_button.wait_for_any_edge().await;
+            self.handle_edge();
+        }
+    }
 }
 
 #[embassy_executor::task]
 pub async fn calib_button_task(mut button: CalibButton<'static>) {
-    loop {
-        button.calib_button.wait_for_any_edge().await;
-        button.handle_edge();
-    }
+    button.run().await;
 }

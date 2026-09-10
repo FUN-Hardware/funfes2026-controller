@@ -90,12 +90,16 @@ impl<'a> TriggerRouter<'a> {
             self.calib_sender.send(CalibStatus::Idle);
         }
     }
+
+    async fn run(&mut self) {
+        loop {
+            self.trigger_receiver.receive().await;
+            self.handle_trigger().await;
+        }
+    }
 }
 
 #[embassy_executor::task]
 pub async fn trigger_router_task(mut router: TriggerRouter<'static>) {
-    loop {
-        router.trigger_receiver.receive().await;
-        router.handle_trigger().await;
-    }
+    router.run().await;
 }
