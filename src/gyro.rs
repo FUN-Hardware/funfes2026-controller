@@ -4,12 +4,11 @@ use bmi2::{
     interface::I2cInterface,
     types::{Burst, GyrRange, GyrRangeVal, OisRange, PwrCtrl},
 };
-use embassy_embedded_hal::shared_bus::blocking::i2c::I2cDevice;
 use embassy_executor;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, watch};
 use embassy_time::{Duration, Ticker};
 use embedded_hal::i2c::I2c;
-use esp_hal::{Blocking, delay::Delay, i2c::master::I2c as EspI2c};
+use esp_hal::delay::Delay;
 
 use crate::types::{CalibKind, CalibStatus, SharedI2c};
 
@@ -133,12 +132,6 @@ where
 }
 
 #[embassy_executor::task]
-pub async fn gyro_task(
-    mut gyro: Gyro<
-        'static,
-        512,
-        SharedI2c,
-    >,
-) {
+pub async fn gyro_task(mut gyro: Gyro<'static, 512, SharedI2c>) {
     gyro.run().await;
 }

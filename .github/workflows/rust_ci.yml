@@ -30,6 +30,11 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+      - name: Create dummy shot.wav
+        # 音源は非公開(gitignore)。include_bytes! を通すためのダミーを置く
+        run: |
+          mkdir -p assets
+          head -c 44 /dev/zero > assets/shot.wav
       - name: Setup Rust
         uses: esp-rs/xtensa-toolchain@v1.5
         with:
