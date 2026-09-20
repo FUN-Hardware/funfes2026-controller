@@ -1,9 +1,8 @@
-use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel, watch::Receiver};
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, watch::Receiver};
 use embassy_time::{Duration, Ticker};
-
 use esp_println::println;
 
-use crate::types::{CalibStatus, SoundEvent};
+use crate::types::*;
 
 #[embassy_executor::task]
 pub async fn display_task(
@@ -41,13 +40,4 @@ pub async fn json_output_task(
 fn clamp(value: f32, zero: f32, one: f32) -> f32 {
     let x = (value - zero) / (one - zero);
     x.clamp(0.0, 1.0)
-}
-
-#[embassy_executor::task]
-pub async fn sound_task(
-    sound_event_receiver: channel::Receiver<'static, CriticalSectionRawMutex, SoundEvent, 3>,
-) {
-    loop {
-        sound_event_receiver.receive().await;
-    }
 }

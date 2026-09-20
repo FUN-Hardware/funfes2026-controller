@@ -4,10 +4,12 @@ use bmi2::{
     interface::I2cInterface,
     types::{Burst, GyrRange, GyrRangeVal, OisRange, PwrCtrl},
 };
+use embassy_embedded_hal::shared_bus::blocking::i2c::I2cDevice;
 use embassy_executor;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, watch};
 use embassy_time::{Duration, Ticker};
-use esp_hal::{Blocking, delay::Delay, i2c::master::I2c};
+use embedded_hal::i2c::I2c;
+use esp_hal::{Blocking, delay::Delay, i2c::master::I2c as EspI2c};
 
 use crate::types::{CalibKind, CalibStatus};
 
@@ -17,14 +19,14 @@ const ALPHA: f32 = 0.1;
 const SAMPLE_RATE: f32 = 0.01;
 const STATIONARY_SAMPLE_COUNT: usize = 100;
 
-pub struct Gyro<'a, const N: usize> {
+pub struct Gyro<'a, const N: usize, I2C> {
     pitch_speed: f32,
     yaw_speed: f32,
     pitch_angle: f32,
     yaw_angle: f32,
     pitch_offset: f32,
     yaw_offset: f32,
-    imu: Bmi2<I2cInterface<I2c<'a, Blocking>>, Delay, N>,
+    imu: Bmi2<I2cInterface<I2C>, Delay, N>,
     gyro_watch: watch::Sender<'a, CriticalSectionRawMutex, (f32, f32), 3>,
     calib_receiver: watch::Receiver<'a, CriticalSectionRawMutex, CalibStatus, 3>,
     calib_sender: watch::Sender<'a, CriticalSectionRawMutex, CalibStatus, 3>,
@@ -32,9 +34,12 @@ pub struct Gyro<'a, const N: usize> {
     stationary_sample_count: usize,
 }
 
-impl<'a, const N: usize> Gyro<'a, N> {
+impl<'a, I2C, const N: usize> Gyro<'a, N, I2C>
+where
+    I2C: I2c,
+{
     pub fn new(
-        i2c: I2c<'a, Blocking>,
+        i2c: I2C,
         gyro_watch: watch::Sender<'a, CriticalSectionRawMutex, (f32, f32), 3>,
         calib_receiver: watch::Receiver<'a, CriticalSectionRawMutex, CalibStatus, 3>,
         calib_sender: watch::Sender<'a, CriticalSectionRawMutex, CalibStatus, 3>,
@@ -117,7 +122,7 @@ impl<'a, const N: usize> Gyro<'a, N> {
         prev_ave * ALPHA + new_val * (1.0 - ALPHA)
     }
 
-    async fn run(&mut self) {
+    pub async fn run(&mut self) {
         let mut ticker = Ticker::every(Duration::from_millis((SAMPLE_RATE * 1000.0) as u64));
 
         loop {
@@ -128,6 +133,12 @@ impl<'a, const N: usize> Gyro<'a, N> {
 }
 
 #[embassy_executor::task]
-pub async fn gyro_task(mut gyro: Gyro<'static, 512>) {
+pub async fn gyro_task(
+    mut gyro: Gyro<
+        'static,
+        512,
+        I2cDevice<'static, CriticalSectionRawMutex, EspI2c<'static, Blocking>>,
+    >,
+) {
     gyro.run().await;
 }

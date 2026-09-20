@@ -24,6 +24,9 @@ esp-println = { version = "0.17.0", features = ["esp32s3"] }
 bmi2 = "0.1.2"
 embassy-sync = "0.8.0"
 embassy-futures = "0.1.2"
+embassy-embedded-hal = "0.6.0"
+embedded-hal = "1.0.0"
+es8311 = "0.1.1"
 
 
 [profile.dev]

@@ -7,18 +7,28 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
+use core::cell::RefCell;
+
+use embassy_embedded_hal::shared_bus::blocking::i2c::I2cDevice;
 use embassy_executor::Spawner;
-use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel, watch::Watch};
+use embassy_sync::{
+    blocking_mutex::{Mutex, raw::CriticalSectionRawMutex},
+    channel::Channel,
+    watch::Watch,
+};
 use embassy_time::{Duration, Timer};
 use esp_hal::{
+    Blocking,
     clock::CpuClock,
+    delay::Delay,
     gpio::{Input, InputConfig, Pull},
     i2c::master::I2c,
     timer::timg::TimerGroup,
 };
 use esp_println::println;
 
-use funfes2026_controller::{game, gyro, input, output, types::*};
+use funfes2026_controller::{audio, game, gyro, input, output, types::*};
+use static_cell::StaticCell;
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
@@ -49,12 +59,18 @@ async fn main(spawner: Spawner) -> ! {
     static SOUND_EVENT_CHANNEL: Channel<CriticalSectionRawMutex, SoundEvent, 3> = Channel::new();
     static ORIENTATION_RANGE_WATCH: Watch<CriticalSectionRawMutex, [(f32, f32); 2], 1> =
         Watch::new();
+    static I2C_BUS: StaticCell<Mutex<CriticalSectionRawMutex, RefCell<I2c<'static, Blocking>>>> =
+        StaticCell::new();
 
-    let gyro = gyro::Gyro::new(
+    let i2c_bus = I2C_BUS.init(Mutex::new(RefCell::new(
         I2c::new(peripherals.I2C0, Default::default())
             .unwrap()
             .with_sda(peripherals.GPIO47)
             .with_scl(peripherals.GPIO48),
+    )));
+
+    let gyro = gyro::Gyro::new(
+        I2cDevice::new(i2c_bus),
         GYRO_WATCH.sender(),
         GYRO_CALIB.receiver().unwrap(),
         GYRO_CALIB.sender(),
@@ -64,7 +80,7 @@ async fn main(spawner: Spawner) -> ! {
 
     let trigger_button_config = InputConfig::default().with_pull(Pull::Up);
     let trigger_button = input::TriggerButton::new(
-        Input::new(peripherals.GPIO9, trigger_button_config), //12はStickの横のボタン、仮置きしているだけ
+        Input::new(peripherals.GPIO10, trigger_button_config), //12はStickの横のボタン、仮置きしているだけ
         TRIGGER_CHANNEL.sender(),
     );
 
@@ -100,7 +116,7 @@ async fn main(spawner: Spawner) -> ! {
         .spawn(input::reload_task(
             AMMO_WATCH.sender(),
             SOUND_EVENT_CHANNEL.sender(),
-            Input::new(peripherals.GPIO10, ammo_button_config), // 基板作成待ちのため、暫定的にM5StickS3内蔵ボタンを使用
+            Input::new(peripherals.GPIO9, ammo_button_config), // 基板作成待ちのため、暫定的にM5StickS3内蔵ボタンを使用
         ))
         .unwrap();
 
@@ -121,8 +137,20 @@ async fn main(spawner: Spawner) -> ! {
         ))
         .unwrap();
 
+    let mut delay = Delay::new();
+    let mut i2c = I2cDevice::new(i2c_bus);
+
+    let (tx, buf) = audio::init_i2s(
+        peripherals.I2S0,
+        peripherals.DMA_CH0,
+        peripherals.GPIO18,
+        peripherals.GPIO17,
+        peripherals.GPIO15,
+        peripherals.GPIO14,
+    );
+    audio::codec::init(&mut i2c, &mut delay, 60).unwrap();
     spawner
-        .spawn(output::sound_task(SOUND_EVENT_CHANNEL.receiver()))
+        .spawn(audio::sound_task(tx, buf, SOUND_EVENT_CHANNEL.receiver()))
         .unwrap();
 
     loop {
