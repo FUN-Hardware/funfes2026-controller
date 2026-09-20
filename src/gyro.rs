@@ -11,7 +11,7 @@ use embassy_time::{Duration, Ticker};
 use embedded_hal::i2c::I2c;
 use esp_hal::{Blocking, delay::Delay, i2c::master::I2c as EspI2c};
 
-use crate::types::{CalibKind, CalibStatus};
+use crate::types::{CalibKind, CalibStatus, SharedI2c};
 
 const RANGE: GyrRangeVal = GyrRangeVal::Range2000;
 const RANGE_NUM: f32 = 2000.0;
@@ -137,7 +137,7 @@ pub async fn gyro_task(
     mut gyro: Gyro<
         'static,
         512,
-        I2cDevice<'static, CriticalSectionRawMutex, EspI2c<'static, Blocking>>,
+        SharedI2c,
     >,
 ) {
     gyro.run().await;
