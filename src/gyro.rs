@@ -14,7 +14,7 @@ use crate::types::{CalibKind, CalibStatus, SharedI2c};
 
 const RANGE: GyrRangeVal = GyrRangeVal::Range2000;
 const RANGE_NUM: f32 = 2000.0;
-const ALPHA: f32 = 0.1;
+const ALPHA: f32 = 0.85;
 const SAMPLE_RATE: f32 = 0.01;
 const STATIONARY_SAMPLE_COUNT: usize = 100;
 
