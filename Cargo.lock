@@ -672,7 +672,6 @@ dependencies = [
  "esp-metadata-generated 0.4.0",
  "esp-sync 0.2.1",
  "log",
- "portable-atomic",
 ]
 
 [[package]]

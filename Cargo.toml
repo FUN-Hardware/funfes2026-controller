@@ -20,7 +20,10 @@ embassy-time     = "0.5.0"
 
 critical-section = "1.2.0"
 static_cell      = "2.1.1"
-esp-println = { version = "0.17.0", features = ["esp32s3"] }
+# `auto`(デフォルト)はS3ではUSB-Serial/JTAG検出用レジスタのアドレスを誤っており、
+# 出力先が書き込み断片ごとに揺れて1行のJSONが分断される。`uart`はROMの
+# uart_tx_one_charを呼ぶため、ROMバナーと同じコンソール(UART0/USB-JTAG)に必ず乗る。
+esp-println = { version = "0.17.0", default-features = false, features = ["esp32s3", "uart", "critical-section"] }
 bmi2 = "0.1.2"
 embassy-sync = "0.8.0"
 embassy-futures = "0.1.2"
