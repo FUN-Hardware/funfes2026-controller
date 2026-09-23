@@ -54,8 +54,10 @@ pub async fn reload_task(
     let mut ammo_button = Button::new(ammo_button);
     loop {
         ammo_button.wait_for_press().await;
-        sound_event_sender.send(SoundEvent::Reload).await;
-        ammo_sender.send(AMMO_MAX);
+        if let Some(0) = ammo_sender.try_get() {
+            sound_event_sender.send(SoundEvent::Reload).await;
+            ammo_sender.send(AMMO_MAX);
+        }
         ammo_button.wait_for_release().await;
     }
 }
