@@ -4,6 +4,12 @@ use esp_println::println;
 
 use crate::types::*;
 
+#[cfg(debug_assertions)]
+const D: Duration = Duration::from_millis(1000);
+
+#[cfg(not(debug_assertions))]
+const D: Duration = Duration::from_millis(20);
+
 #[embassy_executor::task]
 pub async fn display_task(
     mut ammo_receiver: Receiver<'static, CriticalSectionRawMutex, u8, 3>,
@@ -22,7 +28,7 @@ pub async fn json_output_task(
     mut ammo_receiver: Receiver<'static, CriticalSectionRawMutex, u8, 3>,
 ) {
     orientation_range_receiver.get().await;
-    let mut ticker = Ticker::every(Duration::from_millis(1000));
+    let mut ticker = Ticker::every(D);
     loop {
         let orientation = gyro_watch.get().await;
         let range = orientation_range_receiver.try_get().unwrap();
