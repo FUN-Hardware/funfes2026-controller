@@ -2,11 +2,13 @@
 
 大学祭（未来祭2026）で展示予定のシューティングゲーム向けコントローラーの、組み込み側（ファームウェア）リポジトリです。
 
-M5Stack StickS3 上で動作し、内蔵ジャイロセンサーによる照準操作とトリガー/リロード入力を読み取り、USBシリアル経由でPC(Unity)側に送信します。PC側の受信・ゲーム本体はこのリポジトリには含まれません。
+M5Stack StickS3 上で動作し、内蔵ジャイロセンサーによる照準操作とトリガー/リロード入力を読み取り、USBシリアル経由でPC(Unity)側に送信します。あわせて、残弾数の表示（内蔵LCD）と発砲音の再生（内蔵スピーカー）もコントローラー側で行います。PC側の受信・ゲーム本体はこのリポジトリには含まれません。
 
 ## 出力
 
-コントローラーからPC(Unity)へ、USBシリアル経由でJSON（改行区切り、1行1メッセージ）を一方向に送信します。ACK等のハンドシェイクはありません。約1秒間隔（`Ticker::every(1000ms)`）で送信されます。
+コントローラーからPC(Unity)へ、USBシリアル経由でJSON（改行区切り、1行1メッセージ）を一方向に送信します。ACK等のハンドシェイクはありません。
+
+送信周期はビルドプロファイルで切り替わります（`src/output.rs` の `D`）。リリースビルドは20ms間隔、デバッグビルドは1秒間隔で、デバッグ時は `debug_println!` のログと混ざって読みにくくなるため周期を落としてあります。
 
 ```json
 {"x": 0.5, "y": 0.5, "ammo": 5}
@@ -18,6 +20,28 @@ M5Stack StickS3 上で動作し、内蔵ジャイロセンサーによる照準�
 | `y` | `f32` | 照準の上下位置。左下原点で `0.0`〜`1.0`（下端が `0.0`、上端が `1.0`）に正規化され、同様にクランプされる |
 | `ammo` | `u8` | 残弾数 |
 
+正規化は `json_output_task` が自身の送信タイミングでのみ、`gyro_watch` の最新角度と四隅キャリブレーションで得た `(min, max)` から都度計算します。四隅キャリブレーションが済むまで送信は始まりません。
+
+## 画面表示・効果音
+
+- 画面（内蔵LCD、135x240）: 通常時（`CalibStatus::Idle`）は残弾数を7セグメント風に大きく表示し、残弾0では赤く切り替わります。キャリブレーション中は状態ごとのタイトルと操作説明を表示します。描画は `Screen` が残弾数・状態の変化を検知したときだけ行い、変化がなければ待機します。
+- 音（内蔵スピーカー、ES8311 + I2S）: 発砲時に `assets/shot.wav` を再生します。再生中に新しいイベントが来た場合は打ち切って鳴らし直します。リロード音は音源が未用意のため未実装です（`SoundEvent::Reload` は受け取るが何も鳴らさない）。
+
+## 操作
+
+起動直後に静止キャリブレーション（ジャイロのドリフト量測定）が走り、完了すると続けて四隅キャリブレーションに入ります。四隅が揃うと通常状態（`CalibStatus::Idle`）になり、JSON送信が始まります。
+
+| 操作 | 状態 | 動作 |
+| --- | --- | --- |
+| トリガー | `Idle` | 残弾を1発消費して発砲音を鳴らす（残弾0では鳴らさない） |
+| トリガー | `Running(Orientation)` | そのときの向きを画面四隅の1点として記録する（4回で完了） |
+| リロードボタン | 残弾0のときのみ | 残弾を満タンに戻し、同時にいま向いている方向を出力の中心 `(0.5, 0.5)` に取り直す |
+| キャリブボタン長押し | `Idle` | `Selecting`（キャリブレーション種別の選択）へ |
+| キャリブボタン短押し | `Selecting` | 四隅キャリブレーション開始 |
+| キャリブボタン長押し | `Selecting` | 静止キャリブレーション開始 |
+
+リロード時のリセンターは、ジャイロの角度積分に溜まった誤差を遊技中に捨てるための仕組みです。四隅キャリブレーションが済んでいない間は基準が無いため何もしません。
+
 ## 使用技術
 
 - 言語: [Rust](https://www.rust-lang.org/)（`no_std` / `no_main`）
@@ -25,6 +49,8 @@ M5Stack StickS3 上で動作し、内蔵ジャイロセンサーによる照準�
 - HAL: [esp-hal](https://github.com/esp-rs/esp-hal)
 - 実行環境: [esp-rtos](https://github.com/esp-rs/esp-hal)（embassy executor）
 - IMUドライバ: [`bmi2`](https://crates.io/crates/bmi2)
+- 画面: [`mipidsi`](https://crates.io/crates/mipidsi)（ST7789）+ [`embedded-graphics`](https://crates.io/crates/embedded-graphics) + [`embedded-hal-bus`](https://crates.io/crates/embedded-hal-bus)
+- 音声: [`es8311`](https://crates.io/crates/es8311)（コーデック制御）+ esp-hal の I2S/DMA
 
 ## 使い方
 
@@ -32,6 +58,13 @@ M5Stack StickS3 上で動作し、内蔵ジャイロセンサーによる照準�
 
 - ESP32-S3向けのRustツールチェーン（[esp-rs](https://github.com/esp-rs/rust-build)。`rust-toolchain.toml` で `channel = "esp"` を指定済み）
 - [`espflash`](https://github.com/esp-rs/espflash)
+- `assets/shot.wav`（発砲音。音源は非公開のためリポジトリには含めていない。`include_bytes!` で埋め込むため、無いとビルドが通らない）
+
+wavは16kHz / 16bit / モノラルに変換して置きます。
+
+```bash
+ffmpeg -i in.mp3 -ac 1 -ar 16000 -sample_fmt s16 -map_metadata -1 -f wav assets/shot.wav
+```
 
 ### ビルド
 
@@ -52,14 +85,27 @@ cargo run --release
 ジャイロの読み取り値をシリアル出力で確認できる単体テスト的なバイナリです。
 
 ```bash
-cargo run --bin gyro
+cargo run --example gyro
 ```
 
 ## ハードウェア
 
-- マイコン: M5Stack StickS3
+- マイコン: M5Stack StickS3（LCD・スピーカー・IMUは内蔵のものを使用）
 - 入力: マイクロスイッチ（トリガー・リロード用）
 - 基板・筐体: **未定**
+
+ピン割り当て（`src/bin/main.rs` に定義）:
+
+| 用途 | ピン |
+| --- | --- |
+| トリガー | GPIO10 |
+| キャリブボタン | GPIO11 |
+| リロードボタン | GPIO9（基板作成待ちのため、暫定的に内蔵ボタンを使用） |
+| IMU (I2C) | SDA: GPIO47 / SCL: GPIO48 |
+| LCD (SPI2) | SCLK: GPIO40 / MOSI: GPIO39 / CS: GPIO41 / DC: GPIO45 / RST: GPIO21 / バックライト: GPIO38 |
+| スピーカー (I2S) | MCLK: GPIO18 / BCLK: GPIO17 / WS: GPIO15 / DOUT: GPIO14 |
+
+LCDのバックライトは音声コーデックの初期化（`audio::codec::init`）が投入するL3B電源から供給されているため、`display::init` はその**あと**に呼ぶ必要があります。
 
 ---
 
@@ -96,8 +142,9 @@ flowchart TD
     gyro_watch --> trigger_router_task
     gyro_watch --> json_output_task
 
-    trigger_router_task -- "((pitch_min, pitch_max), (yaw_min, yaw_max))" --> calib_range_watch(["Watch&lt;((f32, f32), (f32, f32))&gt;"])
-    calib_range_watch --> json_output_task
+    trigger_router_task -- "[(pitch_min, pitch_max), (yaw_min, yaw_max)]" --> orientation_range_watch(["Watch&lt;[(f32, f32); 2]&gt;"])
+    orientation_range_watch --> json_output_task
+    orientation_range_watch --> gyro_task
 
     trigger_router_task -- "残弾数を減算" --> ammo_watch(["Watch&lt;u8&gt;"])
     reload_task -- "残弾数を一定値へ代入" --> ammo_watch
@@ -105,6 +152,10 @@ flowchart TD
     ammo_watch --> json_output_task
 
     trigger_router_task -. "四隅取得完了時に CalibStatus::Idle" .-> calib_watch
+    gyro_task -. "静止計測完了時に CalibStatus::Idle" .-> calib_watch
+
+    reload_task -- "()" --> recenter_signal(["Signal&lt;()&gt;"])
+    recenter_signal --> gyro_task
 
     trigger_router_task -- "SoundEvent::Fire" --> sound_event(["Channel&lt;SoundEvent&gt;"])
     reload_task -- "SoundEvent::Reload" --> sound_event
@@ -114,7 +165,9 @@ flowchart TD
 トリガー入力の意味（発砲 / キャリブレーション操作）は `CalibStatus` によって変わるため、`trigger_task` からの入力は `trigger_router_task` が一箇所で受け、現在の `CalibStatus` を見て振り分ける:
 
 - `Idle`: 残弾数を減算し（`ammo_watch`）、`SoundEvent::Fire` を送出（通常の発砲）
-- `Running(Orientation)`: その時点のジャイロ角度を画面四隅の1点として記録し、4点集まったら pitch/yaw それぞれの `(min, max)` を `calib_range_watch` に送出したうえで `CalibStatus::Idle` に戻す
+- `Running(Orientation)`: その時点のジャイロ角度を画面四隅の1点として記録し、4点集まったら pitch/yaw それぞれの `(min, max)` を `orientation_range_watch` に送出したうえで `CalibStatus::Idle` に戻す
 - それ以外（`Selecting` / `Running(Stationary)`）: 無視
 
-`reload_task` は残弾数を一定値へ代入し、`SoundEvent::Reload` を送出する。`display_task` / `sound_task` は残弾数・状態やサウンドイベントにのみ反応するため、ジャイロ角度・キャリブレーション範囲は購読しない。角度の0〜1正規化は `json_output_task` が自身の出力タイミングでのみ、`gyro_watch` の最新角度と `calib_range_watch` の `(min, max)` から都度計算する（ジャイロの取得間隔ごとに計算し続けることはしない）。
+`reload_task` は残弾0のときだけ残弾数を一定値へ代入し、`SoundEvent::Reload` と `recenter_signal` を送出する。`gyro_task` は `recenter_signal` を受けると `orientation_range_watch` の `(min, max)` の中央値へ積分角度を打ち直すので、キャリブレーション範囲を読むのは `gyro_task` と `json_output_task` の2つになる。`display_task` / `sound_task` は残弾数・状態やサウンドイベントにのみ反応するため、ジャイロ角度・キャリブレーション範囲は購読しない。角度の0〜1正規化は `json_output_task` が自身の出力タイミングでのみ計算する（ジャイロの取得間隔ごとに計算し続けることはしない）。
+
+`Watch` の受信者数は用途ごとに `src/types.rs` の型エイリアス（`CalibWatch` / `OrientationRangeWatch` など）にまとめてある。受信者を増やすときはこの定数を直す。
