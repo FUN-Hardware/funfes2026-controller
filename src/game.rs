@@ -1,17 +1,19 @@
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel, watch};
 
-use crate::types::{CalibKind, CalibStatus, SoundEvent};
+use crate::types::{
+    CalibKind, CalibReceiver, CalibSender, CalibStatus, OrientationRangeSender, SoundEvent,
+};
 
 const CORNER_COUNT: usize = 4;
 
 pub struct TriggerRouter<'a> {
     trigger_receiver: channel::Receiver<'a, CriticalSectionRawMutex, (), 3>,
-    calib_receiver: watch::Receiver<'a, CriticalSectionRawMutex, CalibStatus, 3>,
-    calib_sender: watch::Sender<'a, CriticalSectionRawMutex, CalibStatus, 3>,
+    calib_receiver: CalibReceiver<'a>,
+    calib_sender: CalibSender<'a>,
     gyro_receiver: watch::Receiver<'a, CriticalSectionRawMutex, (f32, f32), 3>,
     ammo_sender: watch::Sender<'a, CriticalSectionRawMutex, u8, 3>,
     sound_event_sender: channel::Sender<'a, CriticalSectionRawMutex, SoundEvent, 3>,
-    orientation_range_sender: watch::Sender<'a, CriticalSectionRawMutex, [(f32, f32); 2], 1>,
+    orientation_range_sender: OrientationRangeSender<'a>,
     corners: [(f32, f32); CORNER_COUNT],
     corner_count: usize,
 }
@@ -19,12 +21,12 @@ pub struct TriggerRouter<'a> {
 impl<'a> TriggerRouter<'a> {
     pub fn new(
         trigger_receiver: channel::Receiver<'a, CriticalSectionRawMutex, (), 3>,
-        calib_receiver: watch::Receiver<'a, CriticalSectionRawMutex, CalibStatus, 3>,
-        calib_sender: watch::Sender<'a, CriticalSectionRawMutex, CalibStatus, 3>,
+        calib_receiver: CalibReceiver<'a>,
+        calib_sender: CalibSender<'a>,
         gyro_receiver: watch::Receiver<'a, CriticalSectionRawMutex, (f32, f32), 3>,
         ammo_sender: watch::Sender<'a, CriticalSectionRawMutex, u8, 3>,
         sound_event_sender: channel::Sender<'a, CriticalSectionRawMutex, SoundEvent, 3>,
-        orientation_range_sender: watch::Sender<'a, CriticalSectionRawMutex, [(f32, f32); 2], 1>,
+        orientation_range_sender: OrientationRangeSender<'a>,
     ) -> Self {
         Self {
             trigger_receiver,

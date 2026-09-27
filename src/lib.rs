@@ -18,6 +18,7 @@ macro_rules! debug_println {
 
 pub mod audio;
 pub mod button;
+pub mod display;
 pub mod game;
 pub mod gyro;
 pub mod input;

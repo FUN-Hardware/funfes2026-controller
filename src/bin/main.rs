@@ -27,7 +27,7 @@ use esp_hal::{
 };
 use esp_println::println;
 
-use funfes2026_controller::{audio, game, gyro, input, output, types::*};
+use funfes2026_controller::{audio, display, game, gyro, input, output, types::*};
 use static_cell::StaticCell;
 
 #[panic_handler]
@@ -53,12 +53,12 @@ async fn main(spawner: Spawner) -> ! {
     esp_rtos::start(timg0.timer0);
 
     static GYRO_WATCH: Watch<CriticalSectionRawMutex, (f32, f32), 3> = Watch::new();
-    static GYRO_CALIB: Watch<CriticalSectionRawMutex, CalibStatus, 3> = Watch::new();
+    static GYRO_CALIB: CalibWatch = CalibWatch::new();
     static TRIGGER_CHANNEL: Channel<CriticalSectionRawMutex, (), 3> = Channel::new();
     static AMMO_WATCH: Watch<CriticalSectionRawMutex, u8, 3> = Watch::new();
     static SOUND_EVENT_CHANNEL: Channel<CriticalSectionRawMutex, SoundEvent, 3> = Channel::new();
-    static ORIENTATION_RANGE_WATCH: Watch<CriticalSectionRawMutex, [(f32, f32); 2], 1> =
-        Watch::new();
+    static ORIENTATION_RANGE_WATCH: OrientationRangeWatch = OrientationRangeWatch::new();
+    static RECENTER_SIGNAL: RecenterSignal = RecenterSignal::new();
     static I2C_BUS: StaticCell<Mutex<CriticalSectionRawMutex, RefCell<I2c<'static, Blocking>>>> =
         StaticCell::new();
 
@@ -74,6 +74,8 @@ async fn main(spawner: Spawner) -> ! {
         GYRO_WATCH.sender(),
         GYRO_CALIB.receiver().unwrap(),
         GYRO_CALIB.sender(),
+        ORIENTATION_RANGE_WATCH.receiver().unwrap(),
+        &RECENTER_SIGNAL,
     );
 
     spawner.spawn(gyro::gyro_task(gyro)).unwrap();
@@ -117,6 +119,44 @@ async fn main(spawner: Spawner) -> ! {
             AMMO_WATCH.sender(),
             SOUND_EVENT_CHANNEL.sender(),
             Input::new(peripherals.GPIO9, ammo_button_config), // 基板作成待ちのため、暫定的にM5StickS3内蔵ボタンを使用
+            &RECENTER_SIGNAL,
+        ))
+        .unwrap();
+
+    let mut delay = Delay::new();
+    let mut i2c = I2cDevice::new(i2c_bus);
+
+    let (tx, buf) = audio::init_i2s(
+        peripherals.I2S0,
+        peripherals.DMA_CH0,
+        peripherals.GPIO18,
+        peripherals.GPIO17,
+        peripherals.GPIO15,
+        peripherals.GPIO14,
+    );
+    // LCDのバックライトも codec::init が入れる L3B 電源にぶら下がっているため、
+    // 画面の初期化より先に呼ぶ必要がある。
+    audio::codec::init(&mut i2c, &mut delay, 60).unwrap();
+    spawner
+        .spawn(audio::sound_task(tx, buf, SOUND_EVENT_CHANNEL.receiver()))
+        .unwrap();
+
+    // 起動直後のキャリブレーションを画面に出したいので、それより前に立ち上げる。
+    let screen = display::Screen::new(display::init(
+        peripherals.SPI2,
+        peripherals.GPIO40, // SCLK
+        peripherals.GPIO39, // MOSI
+        peripherals.GPIO41, // CS
+        peripherals.GPIO45, // DC
+        peripherals.GPIO21, // RST
+        peripherals.GPIO38, // バックライト
+    ));
+
+    spawner
+        .spawn(output::display_task(
+            screen,
+            AMMO_WATCH.receiver().unwrap(),
+            GYRO_CALIB.receiver().unwrap(),
         ))
         .unwrap();
 
@@ -135,22 +175,6 @@ async fn main(spawner: Spawner) -> ! {
             GYRO_WATCH.receiver().unwrap(),
             AMMO_WATCH.receiver().unwrap(),
         ))
-        .unwrap();
-
-    let mut delay = Delay::new();
-    let mut i2c = I2cDevice::new(i2c_bus);
-
-    let (tx, buf) = audio::init_i2s(
-        peripherals.I2S0,
-        peripherals.DMA_CH0,
-        peripherals.GPIO18,
-        peripherals.GPIO17,
-        peripherals.GPIO15,
-        peripherals.GPIO14,
-    );
-    audio::codec::init(&mut i2c, &mut delay, 60).unwrap();
-    spawner
-        .spawn(audio::sound_task(tx, buf, SOUND_EVENT_CHANNEL.receiver()))
         .unwrap();
 
     loop {

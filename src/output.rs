@@ -1,8 +1,9 @@
+use embassy_futures::select::{Either, select};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, watch::Receiver};
 use embassy_time::{Duration, Ticker};
 use esp_println::println;
 
-use crate::types::*;
+use crate::{display::Screen, types::*};
 
 #[cfg(debug_assertions)]
 const D: Duration = Duration::from_millis(1000);
@@ -12,18 +13,31 @@ const D: Duration = Duration::from_millis(20);
 
 #[embassy_executor::task]
 pub async fn display_task(
+    mut screen: Screen,
     mut ammo_receiver: Receiver<'static, CriticalSectionRawMutex, u8, 3>,
-    mut calib_receiver: Receiver<'static, CriticalSectionRawMutex, CalibStatus, 3>,
+    mut calib_receiver: CalibReceiver<'static>,
 ) {
-    ammo_receiver.get().await;
-    calib_receiver.get().await;
+    let mut ammo = ammo_receiver.get().await;
+    let mut calib = calib_receiver.get().await;
 
-    todo!()
+    loop {
+        if let Err(e) = screen.render(calib, ammo) {
+            crate::debug_println!("display error: {:?}", e);
+        }
+
+        // 負けた側の future を捨てても取りこぼしはない。
+        // Receiver は changed() が完了したときだけ既読位置を進めるため、
+        // 未読の変化は次のループで即座に拾える。
+        match select(calib_receiver.changed(), ammo_receiver.changed()).await {
+            Either::First(next) => calib = next,
+            Either::Second(next) => ammo = next,
+        }
+    }
 }
 
 #[embassy_executor::task]
 pub async fn json_output_task(
-    mut orientation_range_receiver: Receiver<'static, CriticalSectionRawMutex, [(f32, f32); 2], 1>,
+    mut orientation_range_receiver: OrientationRangeReceiver<'static>,
     mut gyro_watch: Receiver<'static, CriticalSectionRawMutex, (f32, f32), 3>,
     mut ammo_receiver: Receiver<'static, CriticalSectionRawMutex, u8, 3>,
 ) {

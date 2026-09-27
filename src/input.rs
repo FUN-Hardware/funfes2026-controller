@@ -4,7 +4,7 @@ use esp_hal::gpio::Input;
 
 use crate::{
     button::Button,
-    types::{CalibKind, CalibStatus, SoundEvent},
+    types::{CalibKind, CalibSender, CalibStatus, RecenterSignal, SoundEvent},
 };
 
 const AMMO_MAX: u8 = 5;
@@ -49,6 +49,7 @@ pub async fn reload_task(
     ammo_sender: watch::Sender<'static, CriticalSectionRawMutex, u8, 3>,
     sound_event_sender: channel::Sender<'static, CriticalSectionRawMutex, SoundEvent, 3>,
     ammo_button: Input<'static>,
+    recenter_signal: &'static RecenterSignal,
 ) {
     ammo_sender.send(AMMO_MAX);
     let mut ammo_button = Button::new(ammo_button);
@@ -57,21 +58,19 @@ pub async fn reload_task(
         if let Some(0) = ammo_sender.try_get() {
             sound_event_sender.send(SoundEvent::Reload).await;
             ammo_sender.send(AMMO_MAX);
+            recenter_signal.signal(());
         }
         ammo_button.wait_for_release().await;
     }
 }
 
 pub struct CalibButton<'a> {
-    gyro_calib: watch::Sender<'a, CriticalSectionRawMutex, CalibStatus, 3>,
+    gyro_calib: CalibSender<'a>,
     calib_button: Button<'a>,
 }
 
 impl<'a> CalibButton<'a> {
-    pub fn new(
-        gyro_calib: watch::Sender<'a, CriticalSectionRawMutex, CalibStatus, 3>,
-        calib_button: Input<'a>,
-    ) -> Self {
+    pub fn new(gyro_calib: CalibSender<'a>, calib_button: Input<'a>) -> Self {
         gyro_calib.send(CalibStatus::Idle);
         Self {
             gyro_calib,

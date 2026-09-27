@@ -10,7 +10,10 @@ use embassy_time::{Duration, Ticker};
 use embedded_hal::i2c::I2c;
 use esp_hal::delay::Delay;
 
-use crate::types::{CalibKind, CalibStatus, SharedI2c};
+use crate::types::{
+    CalibKind, CalibReceiver, CalibSender, CalibStatus, OrientationRangeReceiver, RecenterSignal,
+    SharedI2c,
+};
 
 const RANGE: GyrRangeVal = GyrRangeVal::Range2000;
 const RANGE_NUM: f32 = 2000.0;
@@ -27,8 +30,10 @@ pub struct Gyro<'a, const N: usize, I2C> {
     yaw_offset: f32,
     imu: Bmi2<I2cInterface<I2C>, Delay, N>,
     gyro_watch: watch::Sender<'a, CriticalSectionRawMutex, (f32, f32), 3>,
-    calib_receiver: watch::Receiver<'a, CriticalSectionRawMutex, CalibStatus, 3>,
-    calib_sender: watch::Sender<'a, CriticalSectionRawMutex, CalibStatus, 3>,
+    calib_receiver: CalibReceiver<'a>,
+    calib_sender: CalibSender<'a>,
+    orientation_range_receiver: OrientationRangeReceiver<'a>,
+    recenter_signal: &'a RecenterSignal,
     stationary_samples: [(f32, f32); STATIONARY_SAMPLE_COUNT],
     stationary_sample_count: usize,
 }
@@ -40,8 +45,10 @@ where
     pub fn new(
         i2c: I2C,
         gyro_watch: watch::Sender<'a, CriticalSectionRawMutex, (f32, f32), 3>,
-        calib_receiver: watch::Receiver<'a, CriticalSectionRawMutex, CalibStatus, 3>,
-        calib_sender: watch::Sender<'a, CriticalSectionRawMutex, CalibStatus, 3>,
+        calib_receiver: CalibReceiver<'a>,
+        calib_sender: CalibSender<'a>,
+        orientation_range_receiver: OrientationRangeReceiver<'a>,
+        recenter_signal: &'a RecenterSignal,
     ) -> Self {
         let mut imu = Bmi2::new_i2c(i2c, Delay::new(), I2cAddr::default(), Burst::default());
 
@@ -72,6 +79,8 @@ where
             calib_receiver,
             calib_sender,
             gyro_watch,
+            orientation_range_receiver,
+            recenter_signal,
             stationary_samples: [(0.0, 0.0); STATIONARY_SAMPLE_COUNT],
             stationary_sample_count: 0,
         }
@@ -113,6 +122,19 @@ where
         }
     }
 
+    /// 現在向いている方向が出力の中心(0.5, 0.5)になるよう、積分した角度を打ち直す。
+    /// 4隅キャリブレーションがまだ済んでいなければ基準が無いので何もしない。
+    fn recenter(&mut self) {
+        let Some(range) = self.orientation_range_receiver.try_get() else {
+            return;
+        };
+
+        self.pitch_angle = (range[0].0 + range[0].1) / 2.0;
+        self.yaw_angle = (range[1].0 + range[1].1) / 2.0;
+
+        crate::debug_println!("recentered: {} {}", self.pitch_angle, self.yaw_angle);
+    }
+
     fn raw_to_degrees(raw: i16) -> f32 {
         raw as f32 / 32768.0 * RANGE_NUM
     }
@@ -126,6 +148,9 @@ where
 
         loop {
             ticker.next().await;
+            if self.recenter_signal.try_take().is_some() {
+                self.recenter();
+            }
             self.sensor_read();
         }
     }
