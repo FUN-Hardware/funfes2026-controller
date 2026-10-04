@@ -136,7 +136,7 @@ async fn main(spawner: Spawner) -> ! {
     );
     // LCDのバックライトも codec::init が入れる L3B 電源にぶら下がっているため、
     // 画面の初期化より先に呼ぶ必要がある。
-    audio::codec::init(&mut i2c, &mut delay, 60).unwrap();
+    audio::codec::init(&mut i2c, &mut delay, 70).unwrap();
     spawner
         .spawn(audio::sound_task(tx, buf, SOUND_EVENT_CHANNEL.receiver()))
         .unwrap();
