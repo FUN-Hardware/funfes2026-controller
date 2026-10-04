@@ -82,7 +82,7 @@ async fn main(spawner: Spawner) -> ! {
 
     let trigger_button_config = InputConfig::default().with_pull(Pull::Up);
     let trigger_button = input::TriggerButton::new(
-        Input::new(peripherals.GPIO10, trigger_button_config), //12はStickの横のボタン、仮置きしているだけ
+        Input::new(peripherals.GPIO9, trigger_button_config),
         TRIGGER_CHANNEL.sender(),
     );
 
@@ -118,7 +118,7 @@ async fn main(spawner: Spawner) -> ! {
         .spawn(input::reload_task(
             AMMO_WATCH.sender(),
             SOUND_EVENT_CHANNEL.sender(),
-            Input::new(peripherals.GPIO9, ammo_button_config), // 基板作成待ちのため、暫定的にM5StickS3内蔵ボタンを使用
+            Input::new(peripherals.GPIO10, ammo_button_config),
             &RECENTER_SIGNAL,
         ))
         .unwrap();
