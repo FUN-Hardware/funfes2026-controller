@@ -7,7 +7,7 @@ use crate::{
     types::{CalibKind, CalibSender, CalibStatus, RecenterSignal, SoundEvent},
 };
 
-const AMMO_MAX: u8 = 5;
+const AMMO_MAX: u8 = 9;
 
 pub struct TriggerButton<'a> {
     trigger_button: Button<'a>,

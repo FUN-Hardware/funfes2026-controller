@@ -10,13 +10,13 @@
 
 use embedded_graphics::{
     mono_font::{
-        MonoTextStyle,
-        ascii::{FONT_6X10, FONT_9X15_BOLD},
+        MonoFont, MonoTextStyle,
+        ascii::{FONT_9X18_BOLD, FONT_10X20},
     },
     pixelcolor::Rgb565,
     prelude::*,
     primitives::{PrimitiveStyle, Rectangle, Triangle},
-    text::{Alignment, Text},
+    text::{Alignment, Baseline, Text, TextStyleBuilder},
 };
 use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_hal::{
@@ -49,7 +49,7 @@ const OFFSET_Y: u16 = 40;
 
 /// 画面の向き。`Deg0` はUSB端子を下にした縦持ち(135x240)で、これがM5GFXの既定。
 /// 横持ち(240x135)にしたければ `Rotation::Deg90` / `Deg270` に変える。
-const ORIENTATION: Orientation = Orientation::new().rotate(Rotation::Deg0);
+const ORIENTATION: Orientation = Orientation::new().rotate(Rotation::Deg180);
 
 /// SPIクロック。M5GFX も書き込み 40MHz で駆動している。
 const SPI_FREQ: Rate = Rate::from_mhz(40);
@@ -132,10 +132,13 @@ const H: u32 = match ORIENTATION.rotation {
     Rotation::Deg90 | Rotation::Deg270 => PANEL_WIDTH as u32,
 };
 
-/// キャリブレーション画面のタイトルのベースライン位置と、説明文の1行目・行送り。
-const TITLE_Y: i32 = 22;
-const BODY_Y: i32 = 48;
-const LINE_H: i32 = 13;
+/// キャリブレーション画面の文字。幅135pxに収めるため、
+/// タイトルは13文字・説明文は14文字までしか入らない。
+const TITLE_FONT: MonoFont = FONT_10X20;
+const BODY_FONT: MonoFont = FONT_9X18_BOLD;
+/// タイトルと説明文の間隔、説明文の行送り。
+const TITLE_GAP: i32 = 24;
+const LINE_H: i32 = 26;
 
 /// 桁の周囲の余白と、桁どうしの間隔。
 const MARGIN: u32 = 12;
@@ -240,36 +243,40 @@ impl Screen {
             CalibStatus::Idle => return Ok(()),
             CalibStatus::Selecting => (
                 "CALIB",
-                &["SELECT MODE", "", "TAP  : CORNERS", "HOLD : STILL"][..],
+                &["SELECT MODE", "TAP : CORNERS", "HOLD: STILL"][..],
             ),
-            CalibStatus::Running(CalibKind::Stationary) => (
-                "STILL",
-                &["KEEP CONTROLLER", "STILL...", "", "MEASURING DRIFT"][..],
-            ),
-            CalibStatus::Running(CalibKind::Orientation) => (
-                "CORNERS",
-                &["AIM AT A CORNER", "AND PULL TRIGGER", "", "4 CORNERS"][..],
-            ),
+            CalibStatus::Running(CalibKind::Stationary) => {
+                ("STILL", &["KEEP STILL", "DO NOT MOVE"][..])
+            }
+            CalibStatus::Running(CalibKind::Orientation) => {
+                ("CORNERS", &["AIM CORNER", "PULL TRIGGER", "x4"][..])
+            }
         };
 
-        let title_style = MonoTextStyle::new(&FONT_9X15_BOLD, TITLE_COLOR);
-        let body_style = MonoTextStyle::new(&FONT_6X10, BODY_COLOR);
+        let title_style = MonoTextStyle::new(&TITLE_FONT, TITLE_COLOR);
+        let body_style = MonoTextStyle::new(&BODY_FONT, BODY_COLOR);
+        // 座標を文字の上端で扱えるようにして、行数に応じた縦中央寄せを素直に書く。
+        let layout = TextStyleBuilder::new()
+            .alignment(Alignment::Center)
+            .baseline(Baseline::Top)
+            .build();
+
+        let title_h = TITLE_FONT.character_size.height as i32;
+        let body_h = BODY_FONT.character_size.height as i32;
+        let block_h = title_h + TITLE_GAP + LINE_H * (body.len() as i32 - 1) + body_h;
+        let top = (H as i32 - block_h) / 2;
         let center = W as i32 / 2;
 
-        Text::with_alignment(
-            title,
-            Point::new(center, TITLE_Y),
-            title_style,
-            Alignment::Center,
-        )
-        .draw(&mut self.display)?;
+        Text::with_text_style(title, Point::new(center, top), title_style, layout)
+            .draw(&mut self.display)?;
 
+        let body_top = top + title_h + TITLE_GAP;
         for (i, line) in body.iter().enumerate() {
-            Text::with_alignment(
+            Text::with_text_style(
                 line,
-                Point::new(center, BODY_Y + LINE_H * i as i32),
+                Point::new(center, body_top + LINE_H * i as i32),
                 body_style,
-                Alignment::Center,
+                layout,
             )
             .draw(&mut self.display)?;
         }
