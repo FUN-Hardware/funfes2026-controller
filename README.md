@@ -44,7 +44,7 @@ M5Stack StickS3 上で動作し、内蔵ジャイロセンサーによる照準�
 
 リロード時のリセンターは、ジャイロの角度積分に溜まった誤差を遊技中に捨てるための仕組みです。四隅キャリブレーションが済んでいない間は基準が無いため何もしません。
 
-## 使用技術
+## 技術スタック
 
 - 言語: [Rust](https://www.rust-lang.org/)（`no_std` / `no_main`）
 - マイコン: M5Stack StickS3 (ESP32-S3-PICO-1-N8R8 / IMU: BMI270)
@@ -94,7 +94,6 @@ cargo run --example gyro
 
 - マイコン: M5Stack StickS3（LCD・スピーカー・IMUは内蔵のものを使用）
 - 入力: マイクロスイッチ（トリガー・リロード用）
-- 基板・筐体: **未定**
 
 ピン割り当て（`src/bin/main.rs` に定義）:
 
@@ -106,8 +105,6 @@ cargo run --example gyro
 | IMU (I2C) | SDA: GPIO47 / SCL: GPIO48 |
 | LCD (SPI2) | SCLK: GPIO40 / MOSI: GPIO39 / CS: GPIO41 / DC: GPIO45 / RST: GPIO21 / バックライト: GPIO38 |
 | スピーカー (I2S) | MCLK: GPIO18 / BCLK: GPIO17 / WS: GPIO15 / DOUT: GPIO14 |
-
-LCDのバックライトは音声コーデックの初期化（`audio::codec::init`）が投入するL3B電源から供給されているため、`display::init` はその**あと**に呼ぶ必要があります。
 
 ---
 
